@@ -1,0 +1,227 @@
+/*
+ * Quick Prompt Library
+ *
+ * The floating button has to clear SillyTavern's drawers: while a drawer is open,
+ * #top-settings-holder is promoted to z-index 4005 (public/style.css), and on narrow
+ * screens .drawer-content covers the whole viewport including #send_form. 4500 sits
+ * above that but below #extensionsMenu / #options (29999).
+ *
+ * When the target field lives inside a modal <dialog>, index.js reparents the button
+ * into that dialog instead - showModal() makes everything outside the dialog inert.
+ */
+
+.qp-fab {
+    position: fixed;
+    z-index: 4500;
+    bottom: calc(var(--bottomFormBlockSize) + 16px + env(safe-area-inset-bottom, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    left: auto;
+
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    cursor: pointer;
+
+    border: 1px solid var(--SmartThemeBorderColor);
+    background-color: var(--SmartThemeBlurTintColor);
+    backdrop-filter: blur(var(--SmartThemeBlurStrength));
+    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength));
+    color: var(--SmartThemeBodyColor);
+    box-shadow: 0 2px 10px var(--black50a);
+    font-size: calc(var(--mainFontSize) * 1.1);
+
+    opacity: 0.85;
+    transition: opacity var(--animation-duration-2x), transform var(--animation-duration-2x);
+}
+
+.qp-fab.qp-fab-visible {
+    display: flex;
+}
+
+.qp-fab:hover,
+.qp-fab:focus-visible {
+    opacity: 1;
+    transform: scale(1.05);
+}
+
+.qp-fab.qp-fab-left {
+    right: auto;
+    left: calc(16px + env(safe-area-inset-left, 0px));
+}
+
+/* ------------------------------------------------------------ picker popup */
+
+.qp-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+}
+
+.qp-picker .qp-empty {
+    opacity: 0.7;
+    margin: 0;
+}
+
+.qp-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.qp-picker-category {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+
+.qp-picker-category > summary {
+    cursor: pointer;
+    padding: 4px 0;
+    font-weight: bold;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+}
+
+.qp-picker-item {
+    padding: 8px;
+    margin: 4px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: var(--black30a);
+    transition: background-color var(--animation-duration-2x);
+}
+
+.qp-picker-item:hover,
+.qp-picker-item:focus-visible {
+    background-color: var(--white20a);
+}
+
+.qp-picker-item-title {
+    font-weight: bold;
+}
+
+.qp-picker-item-excerpt {
+    opacity: 0.65;
+    font-size: calc(var(--mainFontSize) * 0.85);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.qp-hidden {
+    display: none !important;
+}
+
+/* ------------------------------------------------------------ settings CRUD */
+
+#quick_prompt_categories {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.qp-category {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 6px;
+}
+
+.qp-category-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.qp-category-name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.qp-prompt-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+    padding-left: 6px;
+}
+
+.qp-prompt {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.qp-prompt-fields {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.qp-prompt-content {
+    resize: vertical;
+    min-height: 3em;
+    font-family: var(--mainFontFamily);
+}
+
+.qp-handle {
+    flex: 0 0 auto;
+    align-self: center;
+    cursor: grab;
+    opacity: 0.5;
+    padding: 6px 2px;
+}
+
+.qp-handle:hover {
+    opacity: 1;
+}
+
+.qp-icon-btn {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity var(--animation-duration-2x);
+}
+
+.qp-icon-btn:hover,
+.qp-icon-btn:focus-visible {
+    opacity: 1;
+    background-color: var(--white20a);
+}
+
+/* ------------------------------------------------------------ touch targets */
+
+@media screen and (max-width: 1000px) {
+    .qp-fab {
+        width: 52px;
+        height: 52px;
+    }
+
+    .qp-icon-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .qp-picker-item {
+        padding: 12px 10px;
+    }
+
+    .qp-picker-category > summary {
+        min-height: 40px;
+    }
+}
