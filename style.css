@@ -1,21 +1,25 @@
 /*
  * Quick Prompt Library
  *
- * The floating button has to clear SillyTavern's drawers: while a drawer is open,
- * #top-settings-holder is promoted to z-index 4005 (public/style.css), and on narrow
- * screens .drawer-content covers the whole viewport including #send_form. 4500 sits
- * above that but below #extensionsMenu / #options (29999).
+ * The floating button is anchored to the focused field by index.js (positionFab),
+ * which sets `top`/`left` from the field's live rectangle and clamps it on screen. This
+ * keeps it beside whatever the user is editing instead of pinned to a viewport corner
+ * that floats away from a centered desktop chat or lands off-screen on mobile.
+ *
+ * z-index 4500 clears SillyTavern's drawers: while a drawer is open #top-settings-holder
+ * is promoted to 4005 (public/style.css), and on narrow screens .drawer-content covers
+ * the whole viewport. It stays below #extensionsMenu / #options (29999).
  *
  * When the target field lives inside a modal <dialog>, index.js reparents the button
- * into that dialog instead - showModal() makes everything outside the dialog inert.
+ * into that dialog - showModal() makes everything outside the dialog inert - and
+ * positionFab shifts the coordinates by that dialog's containing-block origin.
  */
 
 .qp-fab {
     position: fixed;
     z-index: 4500;
-    bottom: calc(var(--bottomFormBlockSize) + 16px + env(safe-area-inset-bottom, 0px));
-    right: calc(16px + env(safe-area-inset-right, 0px));
-    left: auto;
+    top: 0;
+    left: 0;
 
     display: none;
     align-items: center;
@@ -45,11 +49,6 @@
 .qp-fab:focus-visible {
     opacity: 1;
     transform: scale(1.05);
-}
-
-.qp-fab.qp-fab-left {
-    right: auto;
-    left: calc(16px + env(safe-area-inset-left, 0px));
 }
 
 /* ------------------------------------------------------------ picker popup */

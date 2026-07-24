@@ -214,9 +214,64 @@ function buildFab() {
 }
 
 /**
- * Shows/hides the button and, when the target sits inside a modal dialog, moves the
- * button into that dialog - `showModal()` makes everything outside the dialog inert,
- * so a button parented to <body> could not be clicked.
+ * Finds the origin of the button's containing block for `position: fixed`.
+ *
+ * `fixed` is normally relative to the viewport, but an ancestor with `transform`,
+ * `filter`, `backdrop-filter`, `perspective`, `will-change` or `contain: paint` becomes
+ * the containing block instead - and SillyTavern's popups use `backdrop-filter`. When the
+ * button is reparented into such an element, viewport coordinates have to be shifted by
+ * that ancestor's top-left corner or the button lands in the wrong place.
+ * @returns {{x: number, y: number}}
+ */
+function fixedOrigin(el) {
+    let a = el.parentElement;
+    while (a && a !== document.documentElement) {
+        const s = getComputedStyle(a);
+        if (s.transform !== 'none' || s.filter !== 'none' || s.backdropFilter !== 'none' ||
+            s.perspective !== 'none' || s.willChange.includes('transform') ||
+            s.willChange.includes('filter') || s.contain.includes('paint')) {
+            const r = a.getBoundingClientRect();
+            return { x: r.left, y: r.top };
+        }
+        a = a.parentElement;
+    }
+    return { x: 0, y: 0 };
+}
+
+/**
+ * Anchors the button to the focused field instead of a fixed viewport corner.
+ *
+ * A corner-pinned button floats far from a centered desktop chat and can land off-screen
+ * on mobile. Positioning it against the field's live rectangle keeps it beside whatever
+ * the user is actually editing, and clamping guarantees it stays on screen.
+ */
+function positionFab() {
+    if (!fab || !fab.classList.contains('qp-fab-visible') || !isUsable(lastField)) return;
+
+    const rect = lastField.getBoundingClientRect();
+    const w = fab.offsetWidth || 44;
+    const h = fab.offsetHeight || 44;
+    const gap = 8;
+
+    // Tuck the button just inside the field's edge, vertically centred. Inside (not outside)
+    // keeps it clear of the controls that flank a field: the send/wand buttons sit to the
+    // right of #send_textarea's box, and a field's maximize button sits at its top edge.
+    const rawLeft = settings().fabPosition === 'left'
+        ? rect.left + gap
+        : rect.right - w - gap;
+    const rawTop = rect.top + rect.height / 2 - h / 2;
+
+    const left = Math.max(gap, Math.min(rawLeft, window.innerWidth - w - gap));
+    const top = Math.max(gap, Math.min(rawTop, window.innerHeight - h - gap));
+
+    const origin = fixedOrigin(fab);
+    fab.style.left = `${Math.round(left - origin.x)}px`;
+    fab.style.top = `${Math.round(top - origin.y)}px`;
+}
+
+/**
+ * Shows/hides the button, moves it into a modal dialog when the target sits in one
+ * (`showModal()` makes everything outside the dialog inert), then anchors it to the field.
  */
 function updateFab() {
     if (!fab) return;
@@ -224,7 +279,6 @@ function updateFab() {
     adoptActiveElement();
     const visible = settings().fabEnabled && isUsable(lastField);
     fab.classList.toggle('qp-fab-visible', visible);
-    fab.classList.toggle('qp-fab-left', settings().fabPosition === 'left');
 
     if (!visible) {
         if (fab.parentElement !== document.body) {
@@ -237,6 +291,8 @@ function updateFab() {
     if (fab.parentElement !== host) {
         host.append(fab);
     }
+
+    positionFab();
 }
 
 const updateFabDebounced = debounce(updateFab, debounce_timeout.short);
@@ -642,6 +698,10 @@ jQuery(async () => {
         // field without any focus event firing.
         document.addEventListener('focusout', updateFabDebounced);
         window.addEventListener('resize', updateFabDebounced);
+        // The anchored button has to follow its field as the page scrolls or the input grows.
+        // Capture-phase catches scrolling inside any container, not just the window.
+        window.addEventListener('scroll', positionFab, { passive: true, capture: true });
+        document.addEventListener('input', positionFab);
         // Opening a chat can focus #send_textarea without a focusin this extension sees.
         eventSource.on(event_types.CHAT_CHANGED, updateFabDebounced);
 
