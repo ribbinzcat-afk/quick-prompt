@@ -9,8 +9,10 @@ import { t } from '../../../i18n.js';
 const extensionName = 'quick-prompt';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
-/** Any field inside an element carrying this class belongs to us and is never an insert target. */
+/** Marks the picker/settings UI so it is easy to tell our own elements apart. */
 const OWN_UI_CLASS = 'qp-root';
+/** Class on every inline insert button we inject. */
+const INSERT_BTN_CLASS = 'qp-insert-btn';
 /** Show the picker's search box only once the library is big enough to need it. */
 const SEARCH_THRESHOLD = 8;
 /** How long to keep re-asserting the caret after an insert, in ms. */
@@ -18,14 +20,9 @@ const CARET_RESTORE_WINDOW_MS = 300;
 
 const defaultSettings = {
     categories: [],
-    fabEnabled: true,
-    fabPosition: 'right',
+    buttonsEnabled: true,
     lastCategoryId: null,
 };
-
-/** Last text field the user focused that is not part of this extension's own UI. */
-/** @type {HTMLTextAreaElement|HTMLInputElement} */ let lastField = null;
-/** @type {HTMLElement} */ let fab = null;
 
 function settings() {
     return extension_settings[extensionName];
@@ -61,63 +58,12 @@ function totalPromptCount() {
     return settings().categories.reduce((sum, c) => sum + c.prompts.length, 0);
 }
 
-// ---------------------------------------------------------------- focus tracking
-
-function isTrackableField(el) {
-    if (el instanceof HTMLTextAreaElement) return true;
-    return el instanceof HTMLInputElement && el.type === 'text';
-}
-
 function isUsable(el) {
     return el
         && document.body.contains(el)
         && !el.disabled
         && !el.readOnly
         && el.getClientRects().length > 0;
-}
-
-/**
- * Resolves where an inserted prompt should go.
- * Falls back to the chat input so the very first insert of a session still works.
- * @returns {HTMLTextAreaElement|HTMLInputElement|null}
- */
-function resolveTarget() {
-    if (isUsable(lastField)) {
-        return lastField;
-    }
-    const sendTextarea = document.getElementById('send_textarea');
-    return sendTextarea instanceof HTMLTextAreaElement && isUsable(sendTextarea) ? sendTextarea : null;
-}
-
-/**
- * Whether an element may be adopted as the insert target.
- * Fields inside our own popup/settings UI must never qualify, otherwise the picker's
- * search box would overwrite the real target. SillyTavern's own dialogs are NOT excluded -
- * `.maximized_textarea` lives in one and is a legitimate target
- * (see public/scripts/chats.js editor_maximize).
- */
-function isEligibleTarget(el) {
-    return isTrackableField(el) && !el.closest(`.${OWN_UI_CLASS}`);
-}
-
-function trackFocus(event) {
-    if (!isEligibleTarget(event.target)) return;
-    lastField = event.target;
-    updateFab();
-}
-
-/**
- * Adopts whatever is focused right now.
- *
- * Needed because focusing an already-focused element fires no `focusin`: SillyTavern
- * focuses #send_textarea itself on some chat loads, which happens before (or without)
- * any event this extension could observe.
- */
-function adoptActiveElement() {
-    if (isUsable(lastField)) return;
-    if (isEligibleTarget(document.activeElement)) {
-        lastField = /** @type {HTMLTextAreaElement|HTMLInputElement} */ (document.activeElement);
-    }
 }
 
 // ---------------------------------------------------------------- insertion
@@ -191,122 +137,115 @@ function restoreCaret(result) {
     }, CARET_RESTORE_WINDOW_MS);
 }
 
-// ---------------------------------------------------------------- floating button
+// ---------------------------------------------------------------- inline buttons
 
-function buildFab() {
-    const el = document.createElement('div');
-    el.id = 'quickPromptFab';
-    el.className = `qp-fab ${OWN_UI_CLASS} interactable`;
-    el.setAttribute('role', 'button');
-    el.setAttribute('tabindex', '0');
-    el.innerHTML = '<div class="fa-solid fa-plus"></div>';
-    el.title = t`Insert a saved prompt`;
+/**
+ * The three fields the user wants to insert into. Each button is injected next to the
+ * field, so it lives inside that field's own container. That is what makes this robust:
+ * a click inside an open drawer does not trigger SillyTavern's auto-close (which fires
+ * only for clicks whose ancestors include no open drawer - public/script.js ~12119), so
+ * the drawer stays open and the field stays visible.
+ *
+ * @param {string} dataFor The id an `.editor_maximize` button points at.
+ * @returns {boolean} Whether that field is one we insert into.
+ */
+function isTargetEditor(dataFor) {
+    return dataFor === 'description_textarea'         // character description
+        || dataFor.startsWith('world_entry_content_'); // a lorebook entry's content
+}
 
-    // Keep the target field focused: without this the browser blurs it on press,
-    // and on touch devices the caret position would be lost.
-    el.addEventListener('pointerdown', evt => evt.preventDefault());
-    // stopPropagation is essential: SillyTavern auto-closes any open, unpinned drawer when
-    // a click reaches document from outside it (public/script.js ~12119). The button lives
-    // on <body>, so without this a click on it would close the character/lorebook drawer,
-    // hide the field being edited, and send the prompt to the chat box instead.
-    el.addEventListener('click', evt => {
-        evt.stopPropagation();
-        void openPicker();
-    });
-    el.addEventListener('keydown', evt => {
+/**
+ * Builds one insert button. It resolves its target lazily through `getField` so a button
+ * injected next to a field that is later re-rendered still points at the live element.
+ * @param {() => HTMLTextAreaElement|HTMLInputElement|null} getField
+ * @param {string} extraClasses
+ */
+function buildInsertButton(getField, extraClasses) {
+    const btn = document.createElement('div');
+    btn.className = `${INSERT_BTN_CLASS} ${extraClasses}`;
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
+    btn.title = t`Insert a saved prompt`;
+
+    const activate = () => {
+        const field = getField();
+        if (!isUsable(field)) {
+            toastr.info(t`This field is not available right now.`, 'Quick Prompt');
+            return;
+        }
+        void openPicker(field);
+    };
+
+    // preventDefault keeps the field's caret; stopPropagation is defensive so the click
+    // never bubbles to SillyTavern's drawer auto-close handler.
+    btn.addEventListener('pointerdown', evt => evt.preventDefault());
+    btn.addEventListener('click', evt => { evt.stopPropagation(); activate(); });
+    btn.addEventListener('keydown', evt => {
         if (evt.key === 'Enter' || evt.key === ' ') {
             evt.preventDefault();
             evt.stopPropagation();
-            void openPicker();
+            activate();
         }
     });
 
-    return el;
+    return btn;
 }
 
 /**
- * Finds the origin of the button's containing block for `position: fixed`.
- *
- * `fixed` is normally relative to the viewport, but an ancestor with `transform`,
- * `filter`, `backdrop-filter`, `perspective`, `will-change` or `contain: paint` becomes
- * the containing block instead - and SillyTavern's popups use `backdrop-filter`. When the
- * button is reparented into such an element, viewport coordinates have to be shifted by
- * that ancestor's top-left corner or the button lands in the wrong place.
- * @returns {{x: number, y: number}}
+ * Injects a button next to every target field's maximize button. Idempotent - a maximize
+ * button that already has ours beside it is skipped - so it is safe to call on every DOM
+ * mutation, which is how lorebook entries (created on demand) get their button.
  */
-function fixedOrigin(el) {
-    let a = el.parentElement;
-    while (a && a !== document.documentElement) {
-        const s = getComputedStyle(a);
-        if (s.transform !== 'none' || s.filter !== 'none' || s.backdropFilter !== 'none' ||
-            s.perspective !== 'none' || s.willChange.includes('transform') ||
-            s.willChange.includes('filter') || s.contain.includes('paint')) {
-            const r = a.getBoundingClientRect();
-            return { x: r.left, y: r.top };
-        }
-        a = a.parentElement;
+function injectEditorButtons() {
+    if (!settings().buttonsEnabled) return;
+
+    for (const maximize of document.querySelectorAll('.editor_maximize')) {
+        const dataFor = maximize.getAttribute('data-for');
+        if (!dataFor || !isTargetEditor(dataFor)) continue;
+        if (maximize.nextElementSibling?.classList.contains(INSERT_BTN_CLASS)) continue;
+
+        // NOTE: must not carry the `editor_maximize` class - SillyTavern has a delegated
+        // click handler on `.editor_maximize` (public/scripts/chats.js) that would fire too.
+        // `right_menu_button` alone gives the matching size/hover treatment.
+        const btn = buildInsertButton(
+            () => /** @type {HTMLTextAreaElement} */ (document.getElementById(dataFor)),
+            'fa-solid fa-lightbulb right_menu_button',
+        );
+        maximize.insertAdjacentElement('afterend', btn);
     }
-    return { x: 0, y: 0 };
 }
 
-/**
- * Anchors the button to the focused field instead of a fixed viewport corner.
- *
- * A corner-pinned button floats far from a centered desktop chat and can land off-screen
- * on mobile. Positioning it against the field's live rectangle keeps it beside whatever
- * the user is actually editing, and clamping guarantees it stays on screen.
- */
-function positionFab() {
-    if (!fab || !fab.classList.contains('qp-fab-visible') || !isUsable(lastField)) return;
+const injectEditorButtonsDebounced = debounce(injectEditorButtons, debounce_timeout.quick);
 
-    const rect = lastField.getBoundingClientRect();
-    const w = fab.offsetWidth || 32;
-    const h = fab.offsetHeight || 32;
-    const gap = 6;
+/** Adds the chat-input button to the send form once. */
+function injectChatButton() {
+    if (!settings().buttonsEnabled) return;
+    if (document.getElementById('quick_prompt_send_button')) return;
 
-    // Tuck the button just inside the field's edge, vertically centred. Inside (not outside)
-    // keeps it clear of the controls that flank a field: the send/wand buttons sit to the
-    // right of #send_textarea's box, and a field's maximize button sits at its top edge.
-    const rawLeft = settings().fabPosition === 'left'
-        ? rect.left + gap
-        : rect.right - w - gap;
-    const rawTop = rect.top + rect.height / 2 - h / 2;
+    const left = document.getElementById('leftSendForm');
+    if (!left) return;
 
-    const left = Math.max(gap, Math.min(rawLeft, window.innerWidth - w - gap));
-    const top = Math.max(gap, Math.min(rawTop, window.innerHeight - h - gap));
-
-    const origin = fixedOrigin(fab);
-    fab.style.left = `${Math.round(left - origin.x)}px`;
-    fab.style.top = `${Math.round(top - origin.y)}px`;
+    const btn = buildInsertButton(
+        () => /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea')),
+        'fa-solid fa-lightbulb interactable qp-send-btn',
+    );
+    btn.id = 'quick_prompt_send_button';
+    left.append(btn);
 }
 
-/**
- * Shows/hides the button, moves it into a modal dialog when the target sits in one
- * (`showModal()` makes everything outside the dialog inert), then anchors it to the field.
- */
-function updateFab() {
-    if (!fab) return;
-
-    adoptActiveElement();
-    const visible = settings().fabEnabled && isUsable(lastField);
-    fab.classList.toggle('qp-fab-visible', visible);
-
-    if (!visible) {
-        if (fab.parentElement !== document.body) {
-            document.body.append(fab);
-        }
-        return;
-    }
-
-    const host = lastField.closest('dialog[open]') ?? document.body;
-    if (fab.parentElement !== host) {
-        host.append(fab);
-    }
-
-    positionFab();
+/** Removes every injected button (used when the feature is toggled off). */
+function removeInjectedButtons() {
+    document.querySelectorAll(`.${INSERT_BTN_CLASS}`).forEach(el => el.remove());
 }
 
-const updateFabDebounced = debounce(updateFab, debounce_timeout.short);
+function refreshButtons() {
+    if (settings().buttonsEnabled) {
+        injectChatButton();
+        injectEditorButtons();
+    } else {
+        removeInjectedButtons();
+    }
+}
 
 // ---------------------------------------------------------------- picker
 
@@ -401,13 +340,15 @@ function buildPickerContent(popupRef, resultRef, target) {
     return wrapper;
 }
 
-async function openPicker() {
-    // Capture the target now, while the field is still focused and its drawer still open.
-    // Opening the picker (or any later reflow) must not be able to change where the prompt
-    // lands, so this reference - not a fresh resolveTarget() - is what the insert uses.
-    const target = resolveTarget();
-    if (!target) {
-        toastr.info(t`Tap the text field you want to insert into first.`, 'Quick Prompt');
+/**
+ * Opens the picker for a specific field. The target is fixed at call time and threaded
+ * through to the insert, so nothing that happens while the picker is open can redirect
+ * the prompt to a different field.
+ * @param {HTMLTextAreaElement|HTMLInputElement} target
+ */
+async function openPicker(target) {
+    if (!isUsable(target)) {
+        toastr.info(t`This field is not available right now.`, 'Quick Prompt');
         return;
     }
 
@@ -438,7 +379,10 @@ function addWandButton() {
     button.innerHTML = `
         <div class="fa-fw fa-solid fa-bolt extensionsMenuExtensionButton"></div>
         <span>${t`Quick Prompt`}</span>`;
-    button.addEventListener('click', () => void openPicker());
+    // The wand menu lives next to the chat input, so it targets the chat input.
+    button.addEventListener('click', () => void openPicker(
+        /** @type {HTMLTextAreaElement} */ (document.getElementById('send_textarea')),
+    ));
 
     container.append(button);
 }
@@ -661,21 +605,14 @@ function loadSettings() {
         stored.categories = [];
     }
 
-    $('#quick_prompt_fab').prop('checked', stored.fabEnabled);
-    $('#quick_prompt_fab_position').val(stored.fabPosition);
+    $('#quick_prompt_buttons').prop('checked', stored.buttonsEnabled);
 }
 
 function bindSettings() {
-    $('#quick_prompt_fab').on('input', function () {
-        settings().fabEnabled = Boolean($(this).prop('checked'));
+    $('#quick_prompt_buttons').on('input', function () {
+        settings().buttonsEnabled = Boolean($(this).prop('checked'));
         save();
-        updateFab();
-    });
-
-    $('#quick_prompt_fab_position').on('change', function () {
-        settings().fabPosition = String($(this).val());
-        save();
-        updateFab();
+        refreshButtons();
     });
 
     $('#quick_prompt_add_category').on('click', () => {
@@ -705,23 +642,18 @@ jQuery(async () => {
         bindSettings();
         renderCategories();
 
-        fab = buildFab();
-        document.body.append(fab);
+        injectChatButton();
+        injectEditorButtons();
 
-        document.addEventListener('focusin', trackFocus);
-        // A drawer closing or a world info entry being re-rendered can remove the target
-        // field without any focus event firing.
-        document.addEventListener('focusout', updateFabDebounced);
-        window.addEventListener('resize', updateFabDebounced);
-        // The anchored button has to follow its field as the page scrolls or the input grows.
-        // Capture-phase catches scrolling inside any container, not just the window.
-        window.addEventListener('scroll', positionFab, { passive: true, capture: true });
-        document.addEventListener('input', positionFab);
-        // Opening a chat can focus #send_textarea without a focusin this extension sees.
-        eventSource.on(event_types.CHAT_CHANGED, updateFabDebounced);
+        // Lorebook entries and the character panel are (re)rendered on demand, so their
+        // maximize buttons appear after load. Watch the DOM and inject beside any new ones.
+        new MutationObserver(injectEditorButtonsDebounced)
+            .observe(document.body, { childList: true, subtree: true });
+
+        // The chat input row is rebuilt when the send form re-renders (e.g. Quick Replies).
+        eventSource.on(event_types.CHAT_CHANGED, injectChatButton);
 
         addWandButton();
-        updateFab();
 
         console.log(`[${extensionName}] Loaded successfully`);
     } catch (error) {

@@ -1,56 +1,39 @@
 /*
  * Quick Prompt Library
  *
- * The floating button is anchored to the focused field by index.js (positionFab),
- * which sets `top`/`left` from the field's live rectangle and clamps it on screen. This
- * keeps it beside whatever the user is editing instead of pinned to a viewport corner
- * that floats away from a centered desktop chat or lands off-screen on mobile.
+ * The insert button is injected inline next to each supported field (index.js): beside the
+ * editor's maximize button for the character description and lorebook entries, and in the
+ * send form for the chat box. Living inside the field's own container means it needs no
+ * fixed positioning, and - crucially - a click on it does not reach SillyTavern's
+ * document-level drawer auto-close (public/script.js ~12119), so the drawer stays open.
  *
- * z-index 4500 clears SillyTavern's drawers: while a drawer is open #top-settings-holder
- * is promoted to 4005 (public/style.css), and on narrow screens .drawer-content covers
- * the whole viewport. It stays below #extensionsMenu / #options (29999).
- *
- * When the target field lives inside a modal <dialog>, index.js reparents the button
- * into that dialog - showModal() makes everything outside the dialog inert - and
- * positionFab shifts the coordinates by that dialog's containing-block origin.
+ * In the editor header it inherits .editor_maximize / .right_menu_button styling from
+ * SillyTavern, so it only needs a colour accent here.
  */
 
-.qp-fab {
-    position: fixed;
-    z-index: 4500;
-    top: 0;
-    left: 0;
+.qp-insert-btn {
+    cursor: pointer;
+    color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor));
+}
 
-    display: none;
+.qp-insert-btn:hover,
+.qp-insert-btn:focus-visible {
+    opacity: 1;
+    filter: brightness(1.2);
+}
+
+/* Chat-box button: match the other #leftSendForm / #rightSendForm icons. */
+.qp-send-btn {
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    cursor: pointer;
-
-    border: 1px solid var(--SmartThemeBorderColor);
-    background-color: var(--SmartThemeBlurTintColor);
-    backdrop-filter: blur(var(--SmartThemeBlurStrength));
-    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength));
-    color: var(--SmartThemeBodyColor);
-    box-shadow: 0 2px 8px var(--black50a);
-    font-size: calc(var(--mainFontSize) * 0.9);
-
-    /* Faint while idle so it does not obscure text at the field's right edge, opaque on
-       hover/focus. It sits inside the field, so restraint here matters. */
-    opacity: 0.4;
-    transition: opacity var(--animation-duration-2x), transform var(--animation-duration-2x);
+    opacity: 0.7;
+    transition: opacity var(--animation-duration-2x);
 }
 
-.qp-fab.qp-fab-visible {
-    display: flex;
-}
-
-.qp-fab:hover,
-.qp-fab:focus-visible {
+.qp-send-btn:hover,
+.qp-send-btn:focus-visible {
     opacity: 1;
-    transform: scale(1.08);
 }
 
 /* ------------------------------------------------------------ picker popup */
@@ -208,11 +191,6 @@
 /* ------------------------------------------------------------ touch targets */
 
 @media screen and (max-width: 1000px) {
-    .qp-fab {
-        width: 40px;
-        height: 40px;
-    }
-
     .qp-icon-btn {
         width: 40px;
         height: 40px;

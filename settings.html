@@ -7,23 +7,16 @@
         <div class="inline-drawer-content">
             <p>
                 <small>
-                    Save reusable prompts in categories and insert them at the caret of whichever
-                    text field you last touched — the chat box, a character field, or a lorebook entry.
+                    Save reusable prompts in categories, then insert one at the caret with the
+                    <i class="fa-solid fa-lightbulb"></i> button that appears next to the chat box,
+                    the character description, and each lorebook entry.
                 </small>
             </p>
 
-            <label class="checkbox_label" for="quick_prompt_fab">
-                <input id="quick_prompt_fab" type="checkbox" />
-                <span>Show the floating insert button</span>
+            <label class="checkbox_label" for="quick_prompt_buttons">
+                <input id="quick_prompt_buttons" type="checkbox" />
+                <span>Show the insert button next to supported fields</span>
             </label>
-
-            <div class="flex-container flexFlowColumn marginTop5">
-                <label for="quick_prompt_fab_position">Floating button side</label>
-                <select id="quick_prompt_fab_position" class="text_pole">
-                    <option value="right">Right</option>
-                    <option value="left">Left</option>
-                </select>
-            </div>
 
             <div class="flex-container marginTop5">
                 <div id="quick_prompt_add_category" class="menu_button menu_button_icon interactable" tabindex="0">
@@ -45,7 +38,7 @@
 
             <p>
                 <small>
-                    The button is also available in the wand menu (⋮) next to the chat input.
+                    The chat box also has an entry in the wand menu (⋮).
                     Imported categories are always appended, never overwritten.
                 </small>
             </p>
