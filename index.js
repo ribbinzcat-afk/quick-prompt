@@ -129,14 +129,17 @@ function adoptActiveElement() {
  * stack intact and fires a trusted `input` event by itself. SillyTavern relies on `input`
  * everywhere: character fields (script.js), world info entry content (world-info.js) and
  * the chat input auto-resize (RossAscends-mods.js).
+ * The target field is captured when the picker opens and passed in explicitly. It is
+ * never re-resolved here: re-resolving at insert time could fall back to #send_textarea
+ * if the original field became momentarily unusable, silently sending the prompt to the
+ * chat box instead of the character/lorebook field the user was editing.
  * @param {string} text
+ * @param {HTMLTextAreaElement|HTMLInputElement} field
  * @returns {{field: HTMLTextAreaElement|HTMLInputElement, caret: number}|null}
  *          The field written to and where the caret should end up, or null if nothing happened.
  */
-function insertPrompt(text) {
-    const field = resolveTarget();
-
-    if (!field) {
+function insertPrompt(text, field) {
+    if (!isUsable(field)) {
         toastr.info(t`Tap the text field you want to insert into first.`, 'Quick Prompt');
         return null;
     }
@@ -202,10 +205,18 @@ function buildFab() {
     // Keep the target field focused: without this the browser blurs it on press,
     // and on touch devices the caret position would be lost.
     el.addEventListener('pointerdown', evt => evt.preventDefault());
-    el.addEventListener('click', () => void openPicker());
+    // stopPropagation is essential: SillyTavern auto-closes any open, unpinned drawer when
+    // a click reaches document from outside it (public/script.js ~12119). The button lives
+    // on <body>, so without this a click on it would close the character/lorebook drawer,
+    // hide the field being edited, and send the prompt to the chat box instead.
+    el.addEventListener('click', evt => {
+        evt.stopPropagation();
+        void openPicker();
+    });
     el.addEventListener('keydown', evt => {
         if (evt.key === 'Enter' || evt.key === ' ') {
             evt.preventDefault();
+            evt.stopPropagation();
             void openPicker();
         }
     });
@@ -249,9 +260,9 @@ function positionFab() {
     if (!fab || !fab.classList.contains('qp-fab-visible') || !isUsable(lastField)) return;
 
     const rect = lastField.getBoundingClientRect();
-    const w = fab.offsetWidth || 44;
-    const h = fab.offsetHeight || 44;
-    const gap = 8;
+    const w = fab.offsetWidth || 32;
+    const h = fab.offsetHeight || 32;
+    const gap = 6;
 
     // Tuck the button just inside the field's edge, vertically centred. Inside (not outside)
     // keeps it clear of the controls that flank a field: the send/wand buttons sit to the
@@ -299,7 +310,7 @@ const updateFabDebounced = debounce(updateFab, debounce_timeout.short);
 
 // ---------------------------------------------------------------- picker
 
-function buildPickerContent(popupRef, resultRef) {
+function buildPickerContent(popupRef, resultRef, target) {
     const wrapper = document.createElement('div');
     wrapper.className = `${OWN_UI_CLASS} qp-picker`;
 
@@ -352,7 +363,7 @@ function buildPickerContent(popupRef, resultRef) {
             const choose = () => {
                 settings().lastCategoryId = category.id;
                 save();
-                const result = insertPrompt(prompt.content);
+                const result = insertPrompt(prompt.content, target);
                 if (result) {
                     resultRef.value = result;
                     popupRef.value?.complete(POPUP_RESULT.AFFIRMATIVE);
@@ -391,7 +402,11 @@ function buildPickerContent(popupRef, resultRef) {
 }
 
 async function openPicker() {
-    if (!resolveTarget()) {
+    // Capture the target now, while the field is still focused and its drawer still open.
+    // Opening the picker (or any later reflow) must not be able to change where the prompt
+    // lands, so this reference - not a fresh resolveTarget() - is what the insert uses.
+    const target = resolveTarget();
+    if (!target) {
         toastr.info(t`Tap the text field you want to insert into first.`, 'Quick Prompt');
         return;
     }
@@ -400,7 +415,7 @@ async function openPicker() {
     // insert result back out - both are passed by box.
     const popupRef = { value: null };
     const resultRef = { value: null };
-    const content = buildPickerContent(popupRef, resultRef);
+    const content = buildPickerContent(popupRef, resultRef, target);
 
     const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', {
         wide: true,
