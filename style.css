@@ -36,6 +36,31 @@
     opacity: 1;
 }
 
+/* Maximize-editor button: a small floating action in the editor's top-left. Top-left
+   keeps it clear of the popup's × close control, which sits at the top-right. */
+.qp-maximized-btn {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background-color: var(--black30a);
+    opacity: 0.75;
+    font-size: calc(var(--mainFontSize) * 1.1);
+    transition: opacity var(--animation-duration-2x);
+}
+
+.qp-maximized-btn:hover,
+.qp-maximized-btn:focus-visible {
+    opacity: 1;
+    background-color: var(--white20a);
+}
+
 /* ------------------------------------------------------------ picker popup */
 
 .qp-picker {

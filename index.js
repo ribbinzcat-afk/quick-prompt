@@ -215,7 +215,43 @@ function injectEditorButtons() {
     }
 }
 
-const injectEditorButtonsDebounced = debounce(injectEditorButtons, debounce_timeout.quick);
+/**
+ * Injects a button into the "expand the editor" popup that SillyTavern opens for a field.
+ *
+ * The popup holds a `.maximized_textarea` whose `data-for` is the source field's id
+ * (public/scripts/chats.js) and whose input is mirrored straight back to that field - so
+ * inserting here saves exactly as inserting into the field does. We only add the button
+ * when the source is one of our targets.
+ */
+function injectMaximizedButtons() {
+    if (!settings().buttonsEnabled) return;
+
+    for (const textarea of document.querySelectorAll('.maximized_textarea')) {
+        const dataFor = textarea.getAttribute('data-for');
+        if (!dataFor || !isTargetEditor(dataFor)) continue;
+
+        const holder = textarea.parentElement;
+        if (!holder || holder.querySelector(`:scope > .${INSERT_BTN_CLASS}`)) continue;
+
+        const btn = buildInsertButton(
+            () => /** @type {HTMLTextAreaElement} */ (textarea),
+            'fa-solid fa-lightbulb interactable qp-maximized-btn',
+        );
+        // The button is positioned in the corner of the editor via CSS (position: absolute).
+        if (getComputedStyle(holder).position === 'static') {
+            holder.style.position = 'relative';
+        }
+        holder.append(btn);
+    }
+}
+
+/** Runs every inline injection. Safe to call on any DOM change (all steps are idempotent). */
+function injectAllButtons() {
+    injectEditorButtons();
+    injectMaximizedButtons();
+}
+
+const injectButtonsDebounced = debounce(injectAllButtons, debounce_timeout.quick);
 
 /** Adds the chat-input button to the send form once. */
 function injectChatButton() {
@@ -241,7 +277,7 @@ function removeInjectedButtons() {
 function refreshButtons() {
     if (settings().buttonsEnabled) {
         injectChatButton();
-        injectEditorButtons();
+        injectAllButtons();
     } else {
         removeInjectedButtons();
     }
@@ -643,11 +679,11 @@ jQuery(async () => {
         renderCategories();
 
         injectChatButton();
-        injectEditorButtons();
+        injectAllButtons();
 
-        // Lorebook entries and the character panel are (re)rendered on demand, so their
-        // maximize buttons appear after load. Watch the DOM and inject beside any new ones.
-        new MutationObserver(injectEditorButtonsDebounced)
+        // Lorebook entries, the character panel, and the maximize-editor popup are all
+        // (re)rendered on demand. Watch the DOM and inject into any new ones as they appear.
+        new MutationObserver(injectButtonsDebounced)
             .observe(document.body, { childList: true, subtree: true });
 
         // The chat input row is rebuilt when the send form re-renders (e.g. Quick Replies).
